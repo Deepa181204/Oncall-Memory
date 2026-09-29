@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>On-Call Memory Agent</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--fg:#e6e8ee;--mut:#8b93a7;--acc:#6ee7b7;--bad:#f87171;--bd:#2a2f3a}
+@media(prefers-color-scheme:light){:root{--bg:#f6f7fa;--card:#fff;--fg:#14171f;--mut:#5b6478;--acc:#059669;--bad:#dc2626;--bd:#dfe3ea}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--bd);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:16px;margin:0}.pill{font-size:12px;padding:2px 8px;border:1px solid var(--bd);border-radius:99px;color:var(--mut)}
+main{display:grid;grid-template-columns:280px 1fr;gap:16px;padding:16px;max-width:1300px;margin:auto}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+.inc{padding:8px;border-radius:8px;cursor:pointer;border:1px solid transparent}.inc:hover,.inc.sel{border-color:var(--acc)}
+.inc small{color:var(--mut);display:block}
+button{background:var(--acc);color:#04130d;border:0;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer}
+button.alt{background:transparent;color:var(--fg);border:1px solid var(--bd)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}@media(max-width:800px){.cols{grid-template-columns:1fr}}
+h3{margin:.2em 0 .5em;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.ok{color:var(--acc)}.no{color:var(--bad)}pre{white-space:pre-wrap;color:var(--mut);font-size:12px;margin:0}
+.mem{border-left:3px solid var(--acc);padding-left:8px;margin:6px 0;font-size:12px;color:var(--mut)}
+input,textarea,select{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:6px;margin:3px 0;font:inherit}
+</style></head><body>
+<header><h1>On-Call Memory Agent</h1><span class="pill" id="st">…</span>
+<span style="flex:1"></span><button class="alt" onclick="seed()">Seed team rules</button><button class="alt" onclick="insights()">Reflect: recurring patterns</button></header>
+<main>
+<aside class="card"><h3>Incidents (replay in order)</h3><div id="list"></div></aside>
+<section>
+ <div class="card" id="detail">Pick an incident.</div>
+ <div class="cols"><div class="card" id="nomem"><h3>Without memory</h3><span class="pill">run triage</span></div>
+ <div class="card" id="withmem"><h3>With Hindsight memory</h3><span class="pill">run triage</span></div></div>
+ <div class="card" id="teach" style="margin-top:12px;display:none"><h3>Engineer closes the incident → agent learns (retain)</h3>
+  <input id="rc" placeholder="Root cause"><input id="rs" placeholder="Resolution"><input id="mn" type="number" placeholder="Minutes to resolve"><input id="nt" placeholder="Note">
+  <button onclick="teach()">Retain to memory</button> <span id="tmsg" class="ok"></span></div>
+ <div class="card" id="ins" style="margin-top:12px;display:none"></div>
+</section></main>
+<script>
+let cur=null,demoMode=true,apiKey=null;const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function api(p,o={}){const headers=new Headers(o.headers||{});if(apiKey)headers.set('Authorization','Bearer '+apiKey);let r=await fetch(p,{...o,headers});if(r.status===401){apiKey=window.prompt('Enter the operator API key (held only in this tab):');if(!apiKey)throw new Error('Authentication required');headers.set('Authorization','Bearer '+apiKey);r=await fetch(p,{...o,headers});if(r.status===401){apiKey=null;throw new Error('Invalid operator API key')}}const data=await r.json().catch(()=>({detail:'Invalid server response'}));if(!r.ok){const message=data.detail||`Request failed (${r.status})`;window.alert(message);throw new Error(message)}return data}
+async function init(){const s=await api('/api/status');demoMode=s.demo_mode;$('st').textContent=`memory: ${s.memory} · bank: ${s.bank} · llm: ${s.llm}`;
+ if(!demoMode){renderProductionUI(s);return}
+ const L=await api('/api/incidents');$('list').innerHTML=L.map(i=>`<div class="inc" id="i-${i.id}" onclick='pick(${JSON.stringify(i)})'><b>${i.id}</b> ${esc(i.service)}<small>${esc(i.title)}</small></div>`).join('')}
+function pick(i){cur=i;document.querySelectorAll('.inc').forEach(e=>e.classList.remove('sel'));$('i-'+i.id).classList.add('sel');
+ $('detail').innerHTML=`<h3>${i.id} · ${i.severity} · ${esc(i.service)}</h3><b>${esc(i.title)}</b><p>${esc(i.symptoms)}</p><pre>${esc(i.logs)}</pre><p><button class="alt" onclick="run(false)">Triage without memory</button> <button onclick="run(true)">Triage with memory</button></p>`;
+ $('teach').style.display='block';$('tmsg').textContent='';
+ if(demoMode)api('/api/truth/'+i.id).then(t=>{$('rc').value=t.root_cause;$('rs').value=t.resolution;$('mn').value=t.minutes;$('nt').value=t.note})}
+async function run(m){const box=$(m?'withmem':'nomem');box.innerHTML='<h3>'+(m?'With Hindsight memory':'Without memory')+'</h3>Thinking…';
+ const r=await api(`/api/triage/${cur.id}?use_memory=${m}`,{method:'POST'});
+ box.innerHTML=`<h3>${m?'With Hindsight memory':'Without memory'}</h3><p><b>${esc(r.summary)}</b></p>
+ ${demoMode?`<p class="${r.correct?'ok':'no'}">${r.correct?'✔ pointed at the real fix':'✘ missed the real fix'}</p>`:''}
+ <h3>Hypotheses</h3>${(r.hypotheses||[]).map(h=>`<p>• ${esc(h.cause)} <span class="pill">${esc(h.confidence)}</span><br><small>${esc(h.evidence)}</small></p>`).join('')}
+ <h3>First actions</h3>${(r.first_actions||[]).map(a=>`<p>→ ${esc(a)}</p>`).join('')}
+ ${(r.needs_approval||[]).length?`<h3>Needs approval</h3>${r.needs_approval.map(a=>`<p class="no">${esc(a)}</p>`).join('')}`:''}
+ ${m?`<h3>Recalled memories (${r.memories_used.length})</h3>${r.memories_used.map(x=>`<div class="mem">${esc(x.slice(0,280))}…</div>`).join('')||'<small>none yet</small>'}`:''}`}
+async function teach(){const r=await api('/api/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({incident_id:cur.id,root_cause:$('rc').value,resolution:$('rs').value,minutes:+$('mn').value||30,note:$('nt').value})});$('tmsg').textContent='Retained ✔'}
+async function seed(){const r=await api('/api/seed',{method:'POST'});alert('Seeded '+r.seeded+' team rules')}
+async function insights(){$('ins').style.display='block';$('ins').innerHTML='<h3>Reflect</h3>Thinking…';const r=await api('/api/insights');$('ins').innerHTML='<h3>Reflect: what Hindsight has learned</h3><pre>'+esc(r.insights)+'</pre>'}
+let liveIncident=null,liveFirstAction='';
+function renderProductionUI(s){document.querySelector('header').innerHTML='<h1>On-Call Memory Agent</h1><span class="pill">Groq · Hindsight · '+esc(s.bank)+'</span>';
+ document.querySelector('main').innerHTML=`<section class="card" style="max-width:900px;margin:16px auto"><h2>Live incident triage</h2><p>Recommendations are for operator review. The agent does not execute production changes.</p>
+ <div class="cols"><label>Incident ID<input id="liveId" maxlength="100" required></label><label>Service<input id="liveService" maxlength="200" required></label><label>Severity<input id="liveSeverity" maxlength="50" required placeholder="SEV-2"></label><label>Title<input id="liveTitle" maxlength="500" required></label></div>
+ <label>Symptoms<textarea id="liveSymptoms" maxlength="8000" required rows="3"></textarea></label><label>Sanitized log excerpt<textarea id="liveLogs" maxlength="12000" rows="4"></textarea></label>
+ <button onclick="triageLive()">Recall Hindsight and triage with Groq</button><div id="liveResult" class="card" style="display:none;margin-top:12px"></div>
+ <div id="liveClose" class="card" style="display:none;margin-top:12px"><h3>After the incident is resolved · retain review to Hindsight</h3><label>Root cause<input id="liveCause" maxlength="4000" required></label><label>Resolution<input id="liveFix" maxlength="4000" required></label><label>Minutes to resolve<input id="liveMinutes" type="number" min="0" max="525600" value="30"></label><label>Engineer note<input id="liveNote" maxlength="4000"></label><label>Was the agent's first suggestion useful?<select id="liveFeedback"><option value="">Unknown / skip</option><option value="true">Yes</option><option value="false">No</option></select></label><button onclick="resolveLive()">Retain post-incident review</button><span id="liveRetained" class="ok"></span></div></section>`}
+async function triageLive(){const incident={incident_id:$('liveId').value.trim(),service:$('liveService').value.trim(),severity:$('liveSeverity').value.trim(),title:$('liveTitle').value.trim(),symptoms:$('liveSymptoms').value.trim(),logs:$('liveLogs').value.trim()};if(Object.values(incident).slice(0,5).some(v=>!v)){alert('Fill in the incident ID, service, severity, title, and symptoms.');return}const r=await api('/api/triage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(incident)});liveIncident=incident;liveFirstAction=r.first_actions[0]||'';const out=$('liveResult');out.style.display='block';out.innerHTML=`<h3>Triage summary</h3><p>${esc(r.summary)}</p><h3>Hypotheses</h3>${r.hypotheses.map(h=>`<p><b>${esc(h.cause)}</b> <span class="pill">${esc(h.confidence)}</span><br>${esc(h.evidence)}</p>`).join('')}<h3>First actions</h3><ul>${r.first_actions.map(a=>`<li>${esc(a)}</li>`).join('')}</ul>${r.needs_approval.length?`<h3 class="no">Needs approval</h3><ul>${r.needs_approval.map(a=>`<li>${esc(a)}</li>`).join('')}</ul>`:''}<h3>Hindsight memories recalled (${r.memories_used.length})</h3>${r.memories_used.map(m=>`<div class="mem">${esc(m.slice(0,500))}</div>`).join('')||'<small>No matching memory was returned.</small>'}`;$('liveClose').style.display='block';$('liveRetained').textContent=''}
+async function resolveLive(){if(!liveIncident)return;const feedback=$('liveFeedback').value;const body={...liveIncident,root_cause:$('liveCause').value.trim(),resolution:$('liveFix').value.trim(),minutes:+$('liveMinutes').value||0,note:$('liveNote').value.trim(),agent_suggestion:liveFirstAction,suggestion_was_useful:feedback===''?null:feedback==='true'};if(!body.root_cause||!body.resolution){alert('Enter the root cause and resolution before retaining.');return}await api('/api/resolve-live',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('liveRetained').textContent=' Post-incident review retained in Hindsight.'}
+init().catch(e=>{$('st').textContent='connection error';console.error(e)});
+</script></body></html>

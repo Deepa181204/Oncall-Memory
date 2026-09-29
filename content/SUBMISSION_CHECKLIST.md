@@ -1,0 +1,11 @@
+# Submission checklist
+- [ ] GitHub repo public, README clear, Hindsight usage explained (README table + docs/ARCHITECTURE.md)
+- [ ] Run `make demo` against real Hindsight + Groq; update the table with YOUR numbers
+- [ ] Live demo rehearsed (docs/DEMO_SCRIPT.md)
+- [ ] Team video 2-5 min, 1080p, public on **YouTube** with a thumbnail (Prompt 6 in Google Nano Banana)
+- [ ] EACH member: article (public: Medium/Dev.to/Hashnode/Substack/LinkedIn Article), LinkedIn post, Reddit link post
+- [ ] Article/post/title/hashtags NEVER contain the word "hackathon"; don't frame it as a demo or student project
+- [ ] Article includes links: Hindsight GitHub, Hindsight docs, Vectorize agent memory page
+- [ ] Article has: real code snippet, before/after example, an honest limitation, screenshots
+- [ ] LinkedIn post: project repo link in main post; first comment = article URL; second comment = Hindsight repo link; tag Code.in
+- [ ] Reddit link post in r/llmdevs, r/sideproject, r/aiagents or r/aimemory

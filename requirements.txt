@@ -1,0 +1,4 @@
+hindsight-client>=0.10.1
+fastapi>=0.110
+uvicorn[standard]>=0.29
+openai>=1.60

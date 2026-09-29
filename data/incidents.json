@@ -1,0 +1,81 @@
+{
+  "team_rules": [
+    "Team rule (Priya, SRE lead): roll back the most recent deploy first, debug forward second. Never restart a database primary without DBA approval.",
+    "Team rule: any config change to production payments services requires a second engineer to approve in #oncall-approvals before it is applied.",
+    "Team preference: incident summaries must lead with customer impact and end with a single recommended next action."
+  ],
+  "incidents": [
+    {
+      "id": "INC-101", "service": "checkout-api", "severity": "SEV2",
+      "title": "Checkout 5xx spike 12 minutes after deploy 2024.11.3",
+      "symptoms": "5xx rate jumped from 0.2% to 18%. Requests time out after 30s. Deploy of checkout-api v2024.11.3 finished 12 minutes earlier. DB connections timing out, pool saturation on app pods.",
+      "logs": "HikariPool-1 - Connection is not available, request timed out after 30000ms. Active=20 Idle=0 Waiting=143",
+      "root_cause": "New release added a per-request DB call inside a loop and the Hikari connection pool (max 20) was exhausted.",
+      "resolution": "Rolled back to v2024.11.2, then raised the connection pool size to 40 and fixed the N+1 query.",
+      "fix_keywords": ["pool"], "minutes": 47, "note": "Rollback restored service in 6 minutes; the pool size increase was the durable fix."
+    },
+    {
+      "id": "INC-102", "service": "order-events-consumer", "severity": "SEV3",
+      "title": "Order events consumer lag climbing past 2M messages",
+      "symptoms": "Kafka consumer lag on order-events grows steadily. Consumers keep leaving and rejoining the group. Throughput drops to near zero for minutes at a time.",
+      "logs": "Attempt to heartbeat failed since group is rebalancing. Revoking previously assigned partitions. member=order-consumer-7 rebalance count=41/hour",
+      "root_cause": "max.poll.interval.ms was lower than batch processing time after a slow downstream call, causing a rebalance storm.",
+      "resolution": "Raised max.poll.interval.ms to 600000 and reduced max.poll.records from 500 to 100; lag drained in 25 minutes.",
+      "fix_keywords": ["poll"], "minutes": 55, "note": "Adding pods made it worse because every join triggered another rebalance."
+    },
+    {
+      "id": "INC-103", "service": "auth-gateway", "severity": "SEV1",
+      "title": "Internal services rejecting calls from auth-gateway, TLS handshake errors",
+      "symptoms": "Sudden wave of 503s across internal services. All calls through the mesh from auth-gateway fail. Nothing was deployed in the last 24 hours.",
+      "logs": "x509: certificate has expired or is not yet valid: current time 2024-11-14T02:00:04Z is after 2024-11-14T01:59:59Z. remote error: tls: bad certificate",
+      "root_cause": "The internal mTLS intermediate certificate expired; the cert-manager renewal job had been failing silently for 30 days.",
+      "resolution": "Manually reissued the intermediate certificate, restarted the mesh sidecars, and added an expiry alert at 14 days.",
+      "fix_keywords": ["certificate", "cert"], "minutes": 72, "note": "Rolling back deploys is useless here because no deploy caused it. Check cert expiry first for handshake errors."
+    },
+    {
+      "id": "INC-104", "service": "payments-api", "severity": "SEV2",
+      "title": "Payments API timeouts and 5xx after Thursday release",
+      "symptoms": "5xx spike on payments-api shortly after the release. Requests timing out at 30s. Database connection pool saturation on the app pods, waiting requests piling up.",
+      "logs": "QueuePool limit of size 10 overflow 5 reached, connection timed out, timeout 30.00. pool exhausted, waiting=88",
+      "root_cause": "A new endpoint held DB connections open during an external fraud-check call, exhausting the connection pool.",
+      "resolution": "Rolled back the release, moved the fraud-check call outside the DB transaction, and raised the pool size from 10 to 25.",
+      "fix_keywords": ["pool"], "minutes": 21, "note": "Same signature as INC-101; recognising it early saved most of the time."
+    },
+    {
+      "id": "INC-105", "service": "session-cache", "severity": "SEV3",
+      "title": "Users randomly logged out, Redis evictions rising",
+      "symptoms": "Users report being logged out at random. Redis hit rate dropped from 97% to 61%. Memory usage pinned at maxmemory.",
+      "logs": "used_memory 15.98G maxmemory 16G evicted_keys 412903 maxmemory-policy allkeys-lru",
+      "root_cause": "A new feature stored 40KB profile blobs in session keys, and allkeys-lru began evicting live sessions.",
+      "resolution": "Moved profile blobs to a separate Redis, set session keys to volatile-lru, and scaled memory to 24G.",
+      "fix_keywords": ["evict", "volatile", "blob"], "minutes": 64, "note": "Look at key size distribution first next time."
+    },
+    {
+      "id": "INC-106", "service": "invoice-events-consumer", "severity": "SEV3",
+      "title": "Invoice events consumer stuck, lag growing, members flapping",
+      "symptoms": "Kafka consumer lag on invoice-events keeps growing. Consumer group rebalances repeatedly and members keep leaving and rejoining. Throughput drops to near zero.",
+      "logs": "Attempt to heartbeat failed since group is rebalancing. Member invoice-consumer-3 sending LeaveGroup request. rebalance count=37/hour",
+      "root_cause": "max.poll.interval.ms too low for batch processing time again, same rebalance storm as order-events.",
+      "resolution": "Raised max.poll.interval.ms to 600000 and reduced max.poll.records to 100. Did not add pods.",
+      "fix_keywords": ["poll"], "minutes": 18, "note": "Went straight to the poll interval fix."
+    },
+    {
+      "id": "INC-107", "service": "billing-worker", "severity": "SEV1",
+      "title": "Billing worker cannot reach ledger service, TLS bad certificate",
+      "symptoms": "All calls from billing-worker to ledger-service fail with handshake errors. No deploys in the last day. Errors began exactly at midnight UTC.",
+      "logs": "tls: failed to verify certificate: x509: certificate has expired or is not yet valid. remote error: tls: bad certificate",
+      "root_cause": "The ledger-service leaf certificate expired because the renewal job was failing silently, same failure mode as auth-gateway.",
+      "resolution": "Reissued the leaf certificate, restarted sidecars, and verified cert-manager renewal alerts cover ledger-service.",
+      "fix_keywords": ["certificate", "cert"], "minutes": 14, "note": "Skipped the rollback and checked cert expiry immediately."
+    },
+    {
+      "id": "INC-108", "service": "search-api", "severity": "SEV2",
+      "title": "Search API latency and 5xx after canary promotion",
+      "symptoms": "5xx spike and 30s request timeouts on search-api after promoting the canary. Database connections timing out, pods report connection pool saturation with many waiting requests.",
+      "logs": "Timeout acquiring connection from pool: pool exhausted, active=30 idle=0 waiting=210",
+      "root_cause": "A cache miss path fell back to per-item DB lookups, exhausting the connection pool.",
+      "resolution": "Rolled back the canary, batched the lookups, and raised the pool size to 45.",
+      "fix_keywords": ["pool"], "minutes": 12, "note": "Third connection-pool incident this quarter; recall led straight to the pool."
+    }
+  ]
+}

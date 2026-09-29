@@ -1,0 +1,80 @@
+{
+  "memory": "local",
+  "llm": "mock",
+  "baseline": 0,
+  "with_memory": 4,
+  "rows": [
+    {
+      "n": 1,
+      "id": "INC-101",
+      "baseline_hit": false,
+      "memory_hit": false,
+      "cited": [],
+      "minutes_when_resolved": 47
+    },
+    {
+      "n": 2,
+      "id": "INC-102",
+      "baseline_hit": false,
+      "memory_hit": false,
+      "cited": [],
+      "minutes_when_resolved": 55
+    },
+    {
+      "n": 3,
+      "id": "INC-103",
+      "baseline_hit": false,
+      "memory_hit": false,
+      "cited": [],
+      "minutes_when_resolved": 72
+    },
+    {
+      "n": 4,
+      "id": "INC-104",
+      "baseline_hit": false,
+      "memory_hit": true,
+      "cited": [
+        "INC-101"
+      ],
+      "minutes_when_resolved": 21
+    },
+    {
+      "n": 5,
+      "id": "INC-105",
+      "baseline_hit": false,
+      "memory_hit": false,
+      "cited": [],
+      "minutes_when_resolved": 64
+    },
+    {
+      "n": 6,
+      "id": "INC-106",
+      "baseline_hit": false,
+      "memory_hit": true,
+      "cited": [
+        "INC-102"
+      ],
+      "minutes_when_resolved": 18
+    },
+    {
+      "n": 7,
+      "id": "INC-107",
+      "baseline_hit": false,
+      "memory_hit": true,
+      "cited": [
+        "INC-103"
+      ],
+      "minutes_when_resolved": 14
+    },
+    {
+      "n": 8,
+      "id": "INC-108",
+      "baseline_hit": false,
+      "memory_hit": true,
+      "cited": [
+        "INC-101"
+      ],
+      "minutes_when_resolved": 12
+    }
+  ]
+}
